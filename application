@@ -1,0 +1,93 @@
+"""
+app.py — Sample Flask Application
+Runs on local Ubuntu VM (VirtualBox) on port 5000.
+Shows live CPU and RAM usage with auto-refresh.
+Assignment 3 — Cloud Computing | IIT Jodhpur
+"""
+
+from flask import Flask, jsonify
+import socket, datetime, time
+
+app = Flask(__name__)
+
+def get_cpu():
+    import os
+    try:
+        out = os.popen("top -bn1 | grep 'Cpu(s)'").read()
+        parts = out.split()
+        for i, p in enumerate(parts):
+            if 'id' in p and i > 0:
+                return round(100 - float(parts[i-1].replace(',','.')), 1)
+    except: pass
+    return 0.0
+
+def get_ram():
+    try:
+        info = {}
+        with open('/proc/meminfo') as f:
+            for line in f:
+                p = line.split()
+                info[p[0].rstrip(':')] = int(p[1])
+        used = info['MemTotal'] - info['MemAvailable']
+        return round(used * 100 / info['MemTotal'], 1)
+    except: return 0.0
+
+@app.route('/')
+def home():
+    cpu = get_cpu(); ram = get_ram()
+    host = socket.gethostname()
+    now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    threshold = 70
+    alert = cpu > threshold or ram > threshold
+    sc = "#c62828" if alert else "#2e7d32"
+    sb = "#ffebee" if alert else "#e8f5e9"
+    sm = "HIGH LOAD — Auto-scale will trigger!" if alert else "Normal — Monitoring active"
+    cpu_c = "#c62828" if cpu > threshold else "#2e7d32"
+    ram_c = "#c62828" if ram > threshold else "#2e7d32"
+    def bar(v,c):
+        return f'<div style="background:#f0f0f0;border-radius:99px;height:8px;margin-top:4px"><div style="width:{min(v,100):.0f}%;height:8px;border-radius:99px;background:{c}"></div></div>'
+    return f"""<html>
+<head><title>Local VM Monitor</title><meta http-equiv="refresh" content="5">
+<style>body{{font-family:Arial;background:#f5f5f5;padding:30px;margin:0}}
+.card{{background:white;border-radius:14px;padding:24px;max-width:500px;
+       border:1px solid #e0e0e0;margin-bottom:14px}}
+h1{{color:#333;font-size:20px;margin:0 0 12px}}
+.status{{padding:10px 14px;border-radius:8px;font-size:13px;font-weight:500;
+         background:{sb};color:{sc};margin-bottom:14px}}
+table{{width:100%;border-collapse:collapse}}
+td{{padding:10px 8px;border-bottom:1px solid #f5f5f5;font-size:14px}}
+td:first-child{{color:#777;width:40%}}
+.note{{font-size:12px;color:#999;margin-top:10px}}</style></head>
+<body>
+<div class="card">
+<h1>Local VM — Resource Dashboard</h1>
+<div class="status">{sm}</div>
+<table>
+<tr><td>CPU Usage</td><td>
+  <span style="color:{cpu_c};font-weight:500">{cpu}%</span>
+  {bar(cpu,cpu_c)}</td></tr>
+<tr><td>RAM Usage</td><td>
+  <span style="color:{ram_c};font-weight:500">{ram}%</span>
+  {bar(ram,ram_c)}</td></tr>
+<tr><td>Threshold</td><td style="font-weight:500">{threshold}%</td></tr>
+<tr><td>Hostname</td><td>{host}</td></tr>
+<tr><td>Time</td><td>{now}</td></tr>
+<tr><td>Monitor</td><td style="color:#2e7d32">monitor.py active</td></tr>
+<tr><td>Cloud target</td><td>GCP asia-south2-a</td></tr>
+</table>
+<p class="note">Auto-refreshes every 5 seconds</p>
+</div>
+</body></html>"""
+
+@app.route('/health')
+def health():
+    return jsonify({
+        "status": "healthy",
+        "cpu": get_cpu(),
+        "ram": get_ram(),
+        "host": socket.gethostname()
+    }), 200
+
+if __name__ == '__main__':
+    print("Local app running at http://localhost:5000")
+    app.run(host='0.0.0.0', port=5000, debug=False)
