@@ -1,0 +1,121 @@
+# Assignment 3: Local VM Auto-Scaling to GCP
+
+**Course:** Cloud Computing | IIT Jodhpur  
+**Account:** m25ai2160@iitj.ac.in  
+**Cloud:** Google Cloud Platform (GCP)  
+**Project:** auto-scale-vm-project  
+---
+
+## What This Does
+
+Monitors CPU usage on a local Ubuntu VM (VirtualBox). When CPU exceeds **70%**, it automatically launches a new **e2-micro** instance on GCP and deploys a sample Flask web application on it.
+
+---
+
+## Architecture
+
+```
+Local Ubuntu VM (VirtualBox)
+        |
+        | monitor.py reads CPU every 5s
+        |
+        | CPU > 70% detected
+        |
+        | gcloud compute instances create
+        |
+        v
+GCP Compute Engine (e2-micro)
+        |
+        | startup script runs automatically
+        |
+        v
+Sample Flask App (port 80)
+http://<external-ip>
+```
+
+---
+
+## Files
+
+| File | Description |
+|------|-------------|
+| `monitor.py` | Main script — monitors CPU and triggers GCP scaling |
+| `app.py` | Sample Flask app running on local VM (port 5000) |
+| `scaling_policy.md` | Auto-scaling policy documentation |
+| `README.md` | This file |
+
+---
+
+## Auto-Scaling Policy
+
+| Parameter | Value |
+|-----------|-------|
+| CPU Threshold | 70% |
+| Check Interval | Every 5 seconds |
+| Cooldown Period | 5 minutes |
+| Max Instances | 3 |
+| Machine Type | e2-micro (GCP free tier) |
+| Zone | asia-south2-a |
+| Scale-out trigger | CPU > 70% for one check cycle |
+
+---
+
+## Setup Instructions
+
+### Step 1: Install dependencies
+```bash
+sudo apt install python3 python3-pip python3-venv stress -y
+mkdir autoscale-project && cd autoscale-project
+python3 -m venv myenv
+source myenv/bin/activate
+```
+
+### Step 2: Install gcloud CLI
+```bash
+sudo snap install google-cloud-cli --classic
+gcloud auth login --no-launch-browser
+gcloud config set project auto-scale-vm-project
+gcloud config set compute/zone asia-south2-a
+```
+
+### Step 3: Run the demo
+```bash
+# Terminal 1 — start stress to simulate high CPU
+stress --cpu 2 &
+
+# Terminal 2 — run monitor
+python3 monitor.py
+```
+
+### Step 4: Watch auto-scaling trigger
+When CPU > 70%, the monitor automatically runs:
+```
+gcloud compute instances create autoscale-vm-XXXX \
+  --zone=asia-south2-a \
+  --machine-type=e2-micro \
+  --image-family=ubuntu-2204-lts \
+  --image-project=ubuntu-os-cloud \
+  --tags=http-server \
+  --metadata-from-file=startup-script=startup.sh
+```
+
+### Step 5: Access the deployed app
+```
+http://<external-ip>
+```
+
+### Step 6: Cleanup
+```bash
+gcloud compute instances delete autoscale-vm-XXXX \
+  --zone=asia-south2-a --quiet
+```
+
+---
+
+## Results
+
+- CPU spike detected at 100%
+- GCP instance `autoscale-vm` launched automatically
+- External IP: 34.131.111.9
+- Instance status: RUNNING
+- Sample app deployed and accessible via browser
