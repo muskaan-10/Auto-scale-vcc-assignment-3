@@ -1,0 +1,107 @@
+# Auto-Scaling Policy and Resource Migration
+## Assignment 3 — Cloud Computing | IIT Jodhpur
+
+---
+
+## 1. Scaling Policy Definition
+
+### Trigger Condition
+- **Metric Monitored:** CPU Utilization (%)
+- **Threshold:** 70% CPU usage
+- **Evaluation:** Every 5 seconds using `top` command
+
+### Scale-Out Rules
+| Rule | Value | Reason |
+|------|-------|--------|
+| CPU threshold | 70% | Industry standard for scale-out |
+| Cooldown period | 300 seconds | Prevents instance flooding |
+| Max instances | 3 | Controls cost and resource limits |
+| Check frequency | 5 seconds | Fast detection of load spikes |
+
+### Scale-Out Action
+When CPU exceeds 70%:
+1. Script verifies cooldown has expired
+2. Checks current instance count < max (3)
+3. Calls `gcloud compute instances create` with:
+   - Machine: e2-micro (always-free tier)
+   - Zone: asia-south2-a
+   - OS: Ubuntu 22.04 LTS
+   - Startup script: installs Flask + starts app
+
+---
+
+## 2. Resource Migration Process
+
+### What Happens Step by Step
+
+**Step 1 — Detection:**
+monitor.py reads CPU from `top` command every 5 seconds.
+When CPU > 70%, migration process begins.
+
+**Step 2 — Policy Check:**
+- Is cooldown period over? (300s since last trigger)
+- Are we below max instances? (< 3)
+- If both YES → proceed to launch
+
+**Step 3 — Cloud Instance Launch:**
+```bash
+gcloud compute instances create autoscale-vm-{timestamp}
+  --zone=asia-south2-a
+  --machine-type=e2-micro
+  --image-family=ubuntu-2204-lts
+  --image-project=ubuntu-os-cloud
+  --tags=http-server
+  --metadata-from-file=startup-script=startup.sh
+```
+
+**Step 4 — Application Deployment:**
+GCP instance startup script automatically:
+- Updates Ubuntu packages
+- Installs Python3 and Flask
+- Writes the Flask app to /opt/app/app.py
+- Starts the app on port 80
+
+**Step 5 — Verification:**
+- Instance status becomes RUNNING
+- External IP assigned
+- App accessible at http://<external-ip>
+
+---
+
+## 3. Resource Migration Strategy
+
+This implementation uses **Scale-Out (Horizontal Scaling)**:
+
+| Strategy | Description |
+|----------|-------------|
+| Type | Horizontal scale-out (not migration) |
+| Pattern | Local VM continues running |
+| New resource | Fresh GCP instance launched |
+| App deployment | Automatic via startup script |
+| Load handling | New instance handles overflow traffic |
+
+The local VM is NOT shut down or migrated. Instead, a new 
+cloud instance is added to handle excess load. This is the 
+standard cloud burst pattern used in production environments.
+
+---
+
+## 4. Firewall and Network Configuration
+
+GCP firewall rule created to allow HTTP access:
+- Rule name: allow-http (http-server tag)
+- Port: 80 (TCP)
+- Source: 0.0.0.0/0 (all)
+- Target: Instances with tag http-server
+
+---
+
+## 5. Cleanup Policy
+
+After demonstration, instances are terminated:
+```bash
+gcloud compute instances delete autoscale-vm-XXXX \
+  --zone=asia-south2-a --quiet
+```
+
+This prevents unnecessary billing and resource waste.
